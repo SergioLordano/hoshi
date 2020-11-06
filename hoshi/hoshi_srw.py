@@ -88,7 +88,7 @@ def write_srw_transmission(filename, amplitude_3D, opd_3D, energy_grid, hor_grid
         arrayfile.write('#' + repr(vert_grid[2]) + ' #Number of points vs ' + 'Vertical Position' + '\n')
         
         for line in range(nTot):
-            arrayfile.write('{0:.8f}'.format(arTr[line]))
+            arrayfile.write('{0:.8e}'.format(arTr[line]))
             if(line != nTot-1):
                 arrayfile.write('\n')
     arrayfile.close()
@@ -212,9 +212,56 @@ def srw_pp(propagator=0, xrange=1.0, xres=1.0, yrange=1.0, yres=1.0):
     return [0, 0, 1.0, propagator, 0, xrange, xres, yrange, yres, 0, 0, 0]
 
 
-
-
-
+def thickness_to_transmission(thickness, energy, material, density=0, delta=0, beta=0):
+        
+    try:        
+        import xraylib as xrl
+        Z = xrl.SymbolToAtomicNumber(material)
+        density = xrl.ElementDensity(Z)
+        delta = 1 - xrl.Refractive_Index_Re(material, energy*1e-3, density)
+        beta = xrl.Refractive_Index_Im(material, energy*1e-3, density)
+        print("Using xraylib")
+        
+    except:
+        print("Not using xraylib. Please provide density, delta and beta")
+        
+    hc = 1.2398419843320028*1e-6
+    pi = 3.141592653589793
+    
+    wavelength = hc / energy # meters
+    wavenumber = 2 * pi / wavelength  
+    
+    linear_absorption_coeff = 4 * pi * beta / wavelength # m-1
+    attenuation_length = 1 / linear_absorption_coeff
+    print(beta)
+    print(linear_absorption_coeff)
+    print(attenuation_length)
+    
+    amplitude = np.sqrt( np.exp( -1*linear_absorption_coeff * thickness ) )
+    OPD = delta * thickness
+    phase = wavenumber * OPD
+    complex_transmission = amplitude * np.exp(1j * phase)
+    
+    return np.array([complex_transmission, amplitude, phase, OPD])
+    
+    
+def image_to_thickness(filename='', max_thickness=1, rgb_channel=0, invert=0):
+    
+    img = plt.imread(filename)
+    img = np.array(img, dtype=float)
+    
+    if(len(img.shape) > 2):
+        img = img[:,:,rgb_channel]
+        
+    if(invert):
+        img /= -np.max(img)
+        img += 1.0        
+    else:
+        img /= np.max(img)
+    
+    img *= max_thickness
+    
+    return img
 
 
 
