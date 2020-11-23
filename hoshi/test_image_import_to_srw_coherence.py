@@ -18,14 +18,14 @@ import hoshi_srw as hsrw
 
 #########################################################################
 #### imputs
-filename = '/media/lordano/DATA/Mestrado/siemens_article_zoom.jpg'
-max_thickness = 2000e-9
+filename = '/media/lordano/DATA/Mestrado/coherence-lourry-legarde.jpg'
+max_thickness = 5000e-9
 img_width = 3000e-9
 
 energy = 8000.0
 material = 'Au'
 
-transmission_filename = '/media/lordano/DATA/Mestrado/siemens_T{0}nm_W{1}nm_transm_E_{2}eV.txt'.format(int(max_thickness*1e9), int(img_width*1e9), int(energy))
+transmission_filename = '/media/lordano/DATA/Mestrado/legarde_coherence_T{0}nm_W{1}nm_transm_E_{2}eV.txt'.format(int(max_thickness*1e9), int(img_width*1e9), int(energy))
 
 #########################################################################
 
@@ -34,7 +34,7 @@ transmission_filename = '/media/lordano/DATA/Mestrado/siemens_T{0}nm_W{1}nm_tran
 img = hsrw.image_to_thickness(filename, max_thickness=max_thickness, rgb_channel=0, invert=True)
 
 #### apply hard-coded correction to make it nearly binary
-if(1):
+if(0):
     img[img < max_thickness *2/3] = 0.0
     img[img > max_thickness *2/3] = max_thickness
 

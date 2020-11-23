@@ -38,10 +38,11 @@ wfr = hsrw.PlaneWfr(amplitude=1e6,
 
 
 ###### create sample made of an array of slits
-transmission_filename = 'siemens_600nm_transm_E_8000eV.txt'
+folder = '/media/lordano/DATA/Mestrado/'
+transmission_filename = 'siemens_T600nm_W200nm_transm_E_8000eV.txt'
 
-transmission_array, egrid, xgrid, ygrid = hsrw.read_srw_transmission(transmission_filename)    
-arTr = np.genfromtxt(transmission_filename)
+transmission_array, egrid, xgrid, ygrid = hsrw.read_srw_transmission(folder + transmission_filename)    
+arTr = np.genfromtxt(folder + transmission_filename)
 srw_transm = SRWLOptT(_nx=xgrid[2], _ny=ygrid[2], 
                       _rx=xgrid[1] - xgrid[0], _ry=ygrid[1] - ygrid[0], 
                       _arTr=arTr, 
@@ -75,7 +76,7 @@ if(1):
     sample_FT = np.abs(np.fft.fftshift(np.fft.fft2(beam[1:,1:])))**2
     sample_FT /= np.max(sample_FT)
     
-    plt.figure()
+    plt.figure(figsize=(6,6))
     plt.imshow(np.log(sample_FT), origin='lower', aspect='auto', cmap='jet')
     
 
@@ -85,7 +86,7 @@ if(1):
 
 if(1):
     
-    distance = 20.0e-6
+    distance = 10.0e-6
     
     
     drift = SRWLOptD(distance)
