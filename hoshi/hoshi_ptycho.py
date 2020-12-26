@@ -190,19 +190,21 @@ def bin_matrix(matrix, binning_x, binning_y, plot_matrix=0):
             
             return matrix_binned
 
-def crop_array(size, new_size):
+def crop_array(size, new_size, mid_idx=None):
     
     if(new_size < size):
     
         # print('cropping')
         # number of points is odd
-        if (size % 2) != 0:
-            mid_idx = int((size - 1) / 2)
-        
-        # number of points is even 
-        else:
-            mid_idx = int(size/2) # will get the pixel to the right as center
+        if(mid_idx is None):
             
+            if (size % 2) != 0:
+                mid_idx = int((size - 1) / 2)
+            
+            # number of points is even 
+            else:
+                mid_idx = int(size/2) # will get the pixel to the right as center
+                    
         # new n is odd
         if(new_size % 2) != 0:
             idx_min = int(mid_idx - (new_size-1)/2)
@@ -221,7 +223,7 @@ def crop_array(size, new_size):
         
         
 
-def crop_matrix(matrix, new_shape=[], plot_matrix=0):
+def crop_matrix(matrix, new_shape=[], center_pixel=[], plot_matrix=0):
     
     if(len(new_shape) == 2):
         
@@ -229,8 +231,17 @@ def crop_matrix(matrix, new_shape=[], plot_matrix=0):
         yn, xn = matrix.shape
         yn_new, xn_new = new_shape
         
-        new_idx_y = crop_array(yn, yn_new)
-        new_idx_x = crop_array(xn, xn_new)
+                
+        if(center_pixel != []):
+            mid_idx_y, mid_idx_x = center_pixel
+            
+            new_idx_y = crop_array(yn, yn_new, mid_idx_y)
+            new_idx_x = crop_array(xn, xn_new, mid_idx_x)
+        
+          
+        else:
+            new_idx_y = crop_array(yn, yn_new)
+            new_idx_x = crop_array(xn, xn_new)
         
         matrix_cropped = matrix[new_idx_y[0] : new_idx_y[1],
                                 new_idx_x[0] : new_idx_x[1]]   
@@ -274,6 +285,64 @@ def plot_diffraction_pattern(d, index):
     fig.colorbar(im0, ax=ax[0])
     fig.colorbar(im1, ax=ax[1])
     
+def mark_bad_pixels(matrix, bad_pixels_list, marker=-1):
+    for px in bad_pixels_list:
+        matrix[px[0], px[1]] = marker
+    return matrix
+
+def mark_bad_columns(matrix, bad_columns_list, marker=-1):
+    for px in bad_columns_list:
+        matrix[:, px] = marker
+    return matrix
+
+def mark_bad_lines(matrix, bad_lines_list, marker=-1):
+    for px in bad_lines_list:
+        matrix[px, :] = marker
+    return matrix
+    
+    
+def read_nexus_file(filename, detectors_list, motors_list, 
+                    group_path='Scan/scan_000/instrument'):
+    
+    energy_path = 'pre_scan/beamline_status/Monochromator/energy_error'
+    detector_distance_path = ''
+    
+    with h5py.File(filename, 'r') as f:
+        
+        group = f[group_path]
+        
+        # store selected detectors in this array
+        detector_array = []
+        for detector in detectors_list:
+            detector_array.append(np.array(group[detector + '/data'][()]))
+        
+        # store selected motors in this array    
+        motor_array = []
+        for motor in motors_list:
+            motor_array.append(np.array(group[motor+'/data'][()]))
+            
+        energy = np.array(f[energy_path][()])
+        if(detector_distance_path == ''):
+            detector_distance = 1.0
+        else:
+            detector_distance = np.array(f[detector_distance_path][()])
+            
+        attributes = {'energy':energy, 'detector_distance':detector_distance}
+            
+    return detector_array, motor_array, attributes
+    
+def pre_process_from_nexus(filename, detectors, motors, 
+                           cropping=[], center_pixel=[],
+                           bad_pixels=[], binning=[]):
+    
+    detectors_list, motors_list = read_nexus_file(filename, detectors, motors)
+    
+    # x = motor1[0,:][:-40]
+    # z = motor2[:-1,0]
+    
+    
+    
+    return 0 
     
 
 def loadDiffPatterns(filename, binning=[], cropping=[], 
