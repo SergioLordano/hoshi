@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import time
 import h5py
-from skimage.restoration import unwrap_phase
+
 
 def randomField(shape): # For initial guesses
     amp = np.random.random(shape)
@@ -35,64 +35,12 @@ def makeCircAperture(Diameter,imagSize, amp=1.0, plot=False):
     aperture[xx**2 + yy**2 < Raio**2] = amp #Circle equation
     
     if plot:
-#        from matplotlib.pyplot import imshow
+        plt.figure()
         plt.imshow(aperture.real)
         
     return aperture
 
-def updateIllum(obj, illum, exitWave, exitWave_forcedAmp):
-    beta = 0.5
-    illum_updated = illum + beta * ( np.conjugate(obj) / (np.max(np.abs(obj))**2 + 1e-5 ) ) * (exitWave_forcedAmp - exitWave) 
-    return illum_updated
-    
-def updateObj(obj, illum, exitWave, exitWave_forcedAmp):
-    alpha = 0.9
-    obj_updated = obj + alpha * ( np.conjugate(illum) / (np.max(np.abs(illum))**2 + 1e-5) ) * (exitWave_forcedAmp - exitWave) 
-    return obj_updated
 
-def run_local_iteration(obj, illum, diffPattern, updateProbe=1):
-    
-    exitWave = obj * illum # create exit wave
-    F_exitWave = np.fft.fft2(exitWave) # fourier transform
-    
-    # replace modulus
-    F_exitWave_abs = np.abs(F_exitWave) # get exit waves amplitudes
-    F_exitWave_abs[F_exitWave_abs==0] = 1.0 # avoid division by zero
-    F_exitWave = F_exitWave / F_exitWave_abs # normalize the amplitudes
-    # IS IT NEEDED?? (line below)
-    # F_exitWave[np.abs(F_exitWave)==0] = 1.0 # avoid zeros in the amplitudes 
-    F_exitWave = F_exitWave * np.sqrt(diffPattern) # replace modulus by diffraction intensity
-    
-    exitWave_forcedAmp = np.fft.ifft2(F_exitWave) # inverse transform
- 
-    obj = updateObj(obj, illum, exitWave, exitWave_forcedAmp) # update object
-    
-    if(updateProbe):
-        illum = updateIllum(obj, illum, exitWave, exitWave_forcedAmp) # update probe 
-    
-    return obj, illum
-
-def run_ePIE_interation(diffPatterns, obj_recons, illum_recons, obj_positions, updateProbe=1):
-    
-    positionsIndex = np.random.permutation(len(diffPatterns)) # select positions randomly
-    # print(positionsIndex)
-    
-    for i in positionsIndex: # random order
-                
-        obj_pos = obj_positions[i] # object positions for this step
-        
-        local_obj = obj_recons[obj_pos[0]:obj_pos[1], obj_pos[2]:obj_pos[3]] # select object ROI
-        local_illum = illum_recons # select illumination ROI
-        
-        updated_local_obj, updated_local_illum = run_local_iteration(local_obj, 
-                                                                     local_illum, 
-                                                                     diffPatterns[i], 
-                                                                     updateProbe) # run the ptycho algorithm
-        
-        obj_recons[obj_pos[0]:obj_pos[1], obj_pos[2]:obj_pos[3]] = updated_local_obj # update only object ROI
-        illum_recons = updated_local_illum # update only illumination ROI
-        
-    return obj_recons, illum_recons
 
 def print_date_i():
     print('\n'+'EXECUTION BEGAN AT: ', end='')
@@ -102,14 +50,10 @@ def print_date_f():
     print('\n'+'EXECUTION FINISHED AT: ', end='')
     print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), '\n')
 
-def show_field_image(complex_array2D, ext=0, unwrap=0):
+def show_field_image(complex_array2D, ext=0):
     
     amp = np.abs(complex_array2D)
     phase = np.angle(complex_array2D)
-    
-    if(unwrap):
-        phase = unwrap_phase(phase)
-    
     fig, (ax1, ax2) = plt.subplots(1, 2)
     fig.set_size_inches((12,4))
     if(ext != 0):        
@@ -118,9 +62,15 @@ def show_field_image(complex_array2D, ext=0, unwrap=0):
         ax1.set_ylabel('y [$\mu m$]')
         ax1.set_xlabel('x [$\mu m$]')
         ax2.set_xlabel('x [$\mu m$]')
+        
     else:
         im1 = ax1.imshow(amp - np.min(amp), origin='lower')
         im2 = ax2.imshow(phase - np.min(phase), origin='lower')
+    ax1.minorticks_on()
+    ax2.minorticks_on()
+    ax1.tick_params(which='both', axis='both', top=1, right=1)
+    ax2.tick_params(which='both', axis='both', top=1, right=1)
+   
     fig.colorbar(im1, ax=ax1)
     fig.colorbar(im2, ax=ax2)
     
@@ -290,7 +240,7 @@ def plot_diffraction_pattern(d, index):
     fig.colorbar(im1, ax=ax[1])
     
     
-def create_circular_beamstop(matrix, center=None, radius=None):
+def create_circular_beamstop(matrix, center=None, radius=None, marker=-1):
 
     h, w = matrix.shape    
 
@@ -304,7 +254,7 @@ def create_circular_beamstop(matrix, center=None, radius=None):
 
     mask = dist_from_center <= radius
     
-    matrix[mask] = 0
+    matrix[mask] = marker
     
     return matrix
     
@@ -363,17 +313,71 @@ def pre_process_from_nexus(filename, detectors, motors,
     # x = motor1[0,:][:-40]
     # z = motor2[:-1,0]
     
-    
-    
     return 0 
     
 
+def updateIllum(obj, illum, exitWave, exitWave_forcedAmp):
+    beta = 0.5
+    illum_updated = illum + beta * ( np.conjugate(obj) / (np.max(np.abs(obj))**2 + 1e-5 ) ) * (exitWave_forcedAmp - exitWave) 
+    return illum_updated
+    
+def updateObj(obj, illum, exitWave, exitWave_forcedAmp):
+    alpha = 0.9
+    obj_updated = obj + alpha * ( np.conjugate(illum) / (np.max(np.abs(illum))**2 + 1e-5) ) * (exitWave_forcedAmp - exitWave) 
+    return obj_updated
+
+def run_local_iteration(obj, illum, diffPattern, updateProbe=1, marker=None):
+    
+    exitWave = obj * illum # create exit wave
+    F_exitWave = np.fft.fft2(exitWave) # fourier transform
+    
+    # create mask to replace only the known pixels
+    mask = diffPattern != marker
+    
+    # replace modulus
+    F_exitWave_abs = np.abs(F_exitWave) # get exit waves amplitudes
+    F_exitWave_abs[F_exitWave_abs<=0] = 1.0 # avoid division by zero
+    F_exitWave = F_exitWave / F_exitWave_abs # normalize the amplitudes
+    
+    F_exitWave[mask] = F_exitWave[mask] * np.sqrt(diffPattern[mask]) # replace modulus by diffraction intensity
+    
+    exitWave_forcedAmp = np.fft.ifft2(F_exitWave) # inverse transform
+ 
+    obj = updateObj(obj, illum, exitWave, exitWave_forcedAmp) # update object
+    
+    if(updateProbe):
+        illum = updateIllum(obj, illum, exitWave, exitWave_forcedAmp) # update probe 
+    
+    return obj, illum
+
+def run_ePIE_interation(diffPatterns, obj_recons, illum_recons, obj_positions, updateProbe=1, marker=None):
+    
+    positionsIndex = np.random.permutation(len(diffPatterns)) # select positions randomly
+    # print(positionsIndex)
+    
+    for i in positionsIndex: # random order
+                
+        obj_pos = obj_positions[i] # object positions for this step
+        
+        local_obj = obj_recons[obj_pos[0]:obj_pos[1], obj_pos[2]:obj_pos[3]] # select object ROI
+        local_illum = illum_recons # select illumination ROI
+        
+        updated_local_obj, updated_local_illum = run_local_iteration(local_obj, 
+                                                                     local_illum, 
+                                                                     diffPatterns[i], 
+                                                                     updateProbe,
+                                                                     marker) # run the ptycho algorithm
+        
+        obj_recons[obj_pos[0]:obj_pos[1], obj_pos[2]:obj_pos[3]] = updated_local_obj # update only object ROI
+        illum_recons = updated_local_illum # update only illumination ROI
+        
+    return obj_recons, illum_recons
+
 def loadDiffPatterns(filename, binning=[], cropping=[], 
-                     add_noise=0, normalize_to=2**16, use_int=1, 
-                     ceil=0, beamstop=0, specific_datasets=[]):
+                     add_noise=0, normalize_to=0, ceil=0, use_int=0, 
+                     beamstop=0, marker=-1, specific_datasets=[], old=0):
 
     illum_positions = []
-    obj_index = []
     diffInt = []
     
     with h5py.File(filename, 'r') as f:
@@ -382,6 +386,7 @@ def loadDiffPatterns(filename, binning=[], cropping=[],
         energy = f.attrs['energy']
         wl = 1.23984198e-6 / energy
         
+        # gname = 'diffracted intensity'
         gname = 'diff wave'
         group = f[gname]
         
@@ -392,111 +397,82 @@ def loadDiffPatterns(filename, binning=[], cropping=[],
         
         n_dsets = len(dset_names)
         
+        if(old):
+
+            dset = group[dset_names[0]]
+            xi = float(dset.attrs['xi'])*1e-3
+            xf = float(dset.attrs['xf'])*1e-3
+            xn = int(dset.attrs['xn'])
+            yi = float(dset.attrs['yi'])*1e-3
+            yf = float(dset.attrs['yf'])*1e-3
+            yn = int(dset.attrs['yn'])
+    
+        else:
+            xi = float(group.attrs['xi'])
+            xf = float(group.attrs['xf'])
+            xn = int(group.attrs['xn'])
+            yi = float(group.attrs['yi'])
+            yf = float(group.attrs['yf'])
+            yn = int(group.attrs['yn']) 
+        
+        print(xn, yn)
         
         for i in range(n_dsets):
             
             dset = group[dset_names[i]]
-            diffInt.append(np.array(dset))
-            illum_positions.append(np.array([dset.attrs['x_transm'], dset.attrs['y_transm']]))
-            
-            if(i==0):
-                
-                xi = float(dset.attrs['xi'])*1e-3
-                xf = float(dset.attrs['xf'])*1e-3
-                xn = int(dset.attrs['xn'])
-                yi = float(dset.attrs['yi'])*1e-3
-                yf = float(dset.attrs['yf'])*1e-3
-                yn = int(dset.attrs['yn'])
-    
-                
-    if(beamstop != 0):
-        
-        diffIntAux = []           
+            pattern = np.array(dset)
+            if(old):
+                illum_positions.append(np.array([dset.attrs['x_transm'], dset.attrs['y_transm']]))
+            else:
+                illum_positions.append(np.array([dset.attrs['x_sample'], dset.attrs['y_sample']]))
 
-        for pattern in diffInt:
-            
-            pattern = create_circular_beamstop(pattern, radius=beamstop)
-            diffIntAux.append(pattern)
-                            
-        diffInt = diffIntAux
-        del diffIntAux
-        
-    
-    if(cropping != []):
+
+            if(cropping != []):
               
-        if not (len(cropping) == 2):
-            print('cropping must be a list of length 2, with ')
-        else:
-            print('cropping patterns to shape ({0},{1}) '.format(cropping[0], cropping[1]))            
-            yn, xn = cropping
-            
-            diffIntAux = []           
+                if not (len(cropping) == 2):
+                    if(i==0): print('cropping must be a list of length 2, with ')
+                else:
+                    if(i==0): print('cropping patterns to shape ({0},{1}) '.format(cropping[0], cropping[1]))            
+                    yn, xn = cropping
+                    pattern = crop_matrix(pattern, cropping, plot_matrix=0)                
+               
+            if(binning != []):
+        
+                if not((xn % binning[1] == 0) & (yn % binning[0] == 0)):
+                    if(i==0): print('array of shape ({0} x {1}) cannot be binned by factor {2} and {3}'.format(yn, xn, binning[0], binning[1]))
+                else:
+                    if(i==0): print('binning diffraction pattterns by a factor y:{0} and x:{1}'.format(binning[0], binning[1]))
+                    xn = int(xn / binning[1])
+                    yn = int(yn / binning[0])
+                    pattern = bin_matrix(pattern, binning[1], binning[0], 0)
 
-            for pattern in diffInt:
-                
-                cropped_pattern = crop_matrix(pattern, cropping, plot_matrix=0)
-                diffIntAux.append(cropped_pattern)
-                                
-            diffInt = diffIntAux
-            del diffIntAux
-                
-    if(binning != []):
+            if(beamstop != 0):
+                pattern = create_circular_beamstop(pattern, radius=beamstop, marker=marker)
 
-        if not((xn % binning[1] == 0) & (yn % binning[0] == 0)):
-            print('array of shape ({0} x {1}) cannot be binned by factor {2} and {3}'.format(yn, xn, binning[0], binning[1]))
-        else:
-            print('binning diffraction pattterns by a factor y:{0} and x:{1}'.format(binning[0], binning[1]))
-            xn = int(xn / binning[1])
-            yn = int(yn / binning[0])
+                    
+            if(normalize_to > 0):
         
-            diffIntAux = []
-            
-            for pattern in diffInt:
+                if(i==0): print('normalizing to {0}'.format(normalize_to))
+                pattern = normalize_matrix(pattern, normalize_to)
                 
-                diffIntAux.append(bin_matrix(pattern, binning[1], binning[0], 0))
+       
+            if(add_noise):
                 
-            diffInt = diffIntAux
-            del diffIntAux
-            
-    if(normalize_to > 0):
-        
-        print('normalizing to {0}'.format(normalize_to))
-
-        diffIntAux = []
-        
-        for pattern in diffInt:
-            
-            diffIntAux.append(normalize_matrix(pattern, normalize_to))
-            
-        diffInt = diffIntAux
-        del diffIntAux        
-            
-    if(add_noise):
-        
-        diffIntAux = []
-            
-        for pattern in diffInt:
-            
-            diffIntAux.append(add_noise_poisson(pattern, plot_matrix=0))
-            
-        diffInt = diffIntAux
-        del diffIntAux
-        
-    if(use_int):
-        
-        diffIntAux = []
-            
-        for pattern in diffInt:
+                if(i==0): print('adding poisson noise')
+                pattern = add_noise_poisson(pattern, 1)
             
             if(ceil):
-                diffIntAux.append(np.ceil(pattern).astype('int'))
-            else:    
-                diffIntAux.append(np.round(pattern).astype('int'))
-            
-        diffInt = diffIntAux
-        
-        
-            
+                pattern = np.ceil(pattern)
+
+            if(use_int):
+                if(i==0): print('converting to int')
+                pattern = np.round(pattern).astype('int')
+
+
+
+                
+            diffInt.append(pattern)
+                            
     
     rx = xf - xi                # range of the detector
     ry = yf - yi
@@ -505,8 +481,8 @@ def loadDiffPatterns(filename, binning=[], cropping=[],
     
     px_r = wl * z / (xn * px)   # reconstructed pixel size
     py_r = wl * z / (yn * py)
-    rx_r = xn * px_r            # range of the beam reconstruction
-    ry_r = yn * py_r                
+    #rx_r = xn * px_r            # range of the beam reconstruction
+    #ry_r = yn * py_r                
      
     
     illum_positions = np.array(illum_positions)
