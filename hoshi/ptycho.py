@@ -9,7 +9,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 import time
 import h5py
-
+from copy import deepcopy
+import matplotlib.patches as patches
 
 def randomField(shape): # For initial guesses
     amp = np.random.random(shape)
@@ -179,28 +180,10 @@ def crop_array(size, new_size, mid_idx=None):
         
         
 
-def crop_matrix(matrix, new_shape=[], center_pixel=[], plot_matrix=0):
+def crop_matrix(matrix, new_idx_y, new_idx_x, plot_matrix=0):
     
-    if(len(new_shape) == 2):
-        
-        crop_y, crop_x = new_shape
-        yn, xn = matrix.shape
-        yn_new, xn_new = new_shape
-        
-                
-        if(center_pixel != []):
-            mid_idx_y, mid_idx_x = center_pixel
-            
-            new_idx_y = crop_array(yn, yn_new, mid_idx_y)
-            new_idx_x = crop_array(xn, xn_new, mid_idx_x)
-        
-          
-        else:
-            new_idx_y = crop_array(yn, yn_new)
-            new_idx_x = crop_array(xn, xn_new)
-        
-        matrix_cropped = matrix[new_idx_y[0] : new_idx_y[1],
-                                new_idx_x[0] : new_idx_x[1]]   
+        matrix_cropped = matrix[int(new_idx_y[0]) : int(new_idx_y[1]),
+                                int(new_idx_x[0]) : int(new_idx_x[1])]   
 
         if(plot_matrix):
             fig, ax = plt.subplots(ncols=2)
@@ -209,9 +192,6 @@ def crop_matrix(matrix, new_shape=[], center_pixel=[], plot_matrix=0):
             plt.show()
 
         return matrix_cropped     
-        
-    else:
-        return matrix
     
 
 def add_noise_poisson(matrix, marker=None, plot_matrix=0):
@@ -333,7 +313,10 @@ def updateObj(obj, illum, exitWave, exitWave_forcedAmp):
     obj_updated = obj + alpha * ( np.conjugate(illum) / (np.max(np.abs(illum))**2 + 1e-5) ) * (exitWave_forcedAmp - exitWave) 
     return obj_updated
 
-def run_local_iteration(obj, illum, diffPattern, updateProbe=1, marker=None):
+def run_local_iteration(obj, illum, diffPattern, updateProbe=1, updateSample=1, marker=None):
+    
+    # print('obj shape = ', obj.shape)
+    # print('illum shape = ', illum.shape)
     
     exitWave = obj * illum # create exit wave
     F_exitWave = np.fft.fft2(exitWave) # fourier transform
@@ -341,25 +324,30 @@ def run_local_iteration(obj, illum, diffPattern, updateProbe=1, marker=None):
     # create mask to replace only the known pixels
     mask = diffPattern != marker
     diffPattern = np.fft.fftshift(diffPattern)
-    
-    
+        
     # replace modulus
     F_exitWave_abs = np.abs(F_exitWave) # get exit waves amplitudes
     F_exitWave_abs[F_exitWave_abs<=0] = 1.0 # avoid division by zero
     F_exitWave = F_exitWave / F_exitWave_abs # normalize the amplitudes
+        
+    # print('mask shape = ', mask.shape)
+    # print('F_exitWave shape = ', F_exitWave.shape)
+    # print('diffPattern shape = ', diffPattern.shape)
     
     F_exitWave[mask] = F_exitWave[mask] * np.sqrt(diffPattern[mask]) # replace modulus by diffraction intensity
     
     exitWave_forcedAmp = np.fft.ifft2(F_exitWave) # inverse transform
  
-    obj = updateObj(obj, illum, exitWave, exitWave_forcedAmp) # update object
+    if(updateSample):
+        obj = updateObj(obj, illum, exitWave, exitWave_forcedAmp) # update object
     
     if(updateProbe):
         illum = updateIllum(obj, illum, exitWave, exitWave_forcedAmp) # update probe 
     
     return obj, illum
 
-def run_ePIE_interation(diffPatterns, obj_recons, illum_recons, obj_positions, updateProbe=1, marker=None):
+def run_ePIE_interation(diffPatterns, obj_recons, illum_recons, obj_positions, 
+                        updateProbe=1, updateSample=1, marker=None):
     
     positionsIndex = np.random.permutation(len(diffPatterns)) # select positions randomly
     # print(positionsIndex)
@@ -375,6 +363,7 @@ def run_ePIE_interation(diffPatterns, obj_recons, illum_recons, obj_positions, u
                                                                      local_illum, 
                                                                      diffPatterns[i], 
                                                                      updateProbe,
+                                                                     updateSample,
                                                                      marker) # run the ptycho algorithm
         
         obj_recons[obj_pos[0]:obj_pos[1], obj_pos[2]:obj_pos[3]] = updated_local_obj # update only object ROI
@@ -382,13 +371,11 @@ def run_ePIE_interation(diffPatterns, obj_recons, illum_recons, obj_positions, u
         
     return obj_recons, illum_recons
 
-def loadDiffPatterns(filename, binning=[], cropping=[], 
-                     add_noise=0, normalize_to=0, ceil=0, use_int=0, 
+def loadDiffPatterns(filename, binning=[], cropping=[], multi_factor=0,
+                     add_noise=0, normalize_to=0, ceil=0, use_int=0, around=0,
                      beamstop=0, marker=-1, specific_datasets=[], old=0):
 
-    illum_positions = []
-    diffInt = []
-    
+   
     with h5py.File(filename, 'r') as f:
         
         z = f.attrs['detector distance']        
@@ -405,6 +392,7 @@ def loadDiffPatterns(filename, binning=[], cropping=[],
             dset_names = list(group.keys())
         
         n_dsets = len(dset_names)
+        print('n datasets =', n_dsets)
         
         if(old):
 
@@ -424,27 +412,51 @@ def loadDiffPatterns(filename, binning=[], cropping=[],
             yf = float(group.attrs['yf'])
             yn = int(group.attrs['yn']) 
         
-        print(xn, yn)
+        print("nx, ny =", xn, yn)
+        xn0 = deepcopy(xn)
+        yn0 = deepcopy(yn)
+        
+        illum_positions = []
+        diffInt = []
+        max_count = 0
         
         for i in range(n_dsets):
             
             dset = group[dset_names[i]]
             pattern = np.array(dset)
+            
             if(old):
                 illum_positions.append(np.array([dset.attrs['x_transm'], dset.attrs['y_transm']]))
             else:
                 illum_positions.append(np.array([dset.attrs['x_sample'], dset.attrs['y_sample']]))
 
+            xn = xn0
+            yn = yn0
 
             if(cropping != []):
               
                 if not (len(cropping) == 2):
                     if(i==0): print('cropping must be a list of length 2, with ')
                 else:
-                    if(i==0): print('cropping patterns to shape ({0},{1}) '.format(cropping[0], cropping[1]))            
-                    yn, xn = cropping
-                    pattern = crop_matrix(pattern, cropping, plot_matrix=0)                
-               
+                    if(i==0): 
+                        print('cropping patterns to shape ({0},{1}) '.format(cropping[0], cropping[1]))                
+                        
+                        x_array = np.linspace(xi, xf, xn)
+                        y_array = np.linspace(yi, yf, yn)
+                        x_idx_crop = crop_array(xn, cropping[1])                        
+                        y_idx_crop = crop_array(yn, cropping[0])
+                        
+                        # update initial and final values
+                        xi = x_array[x_idx_crop[0]]
+                        xf = x_array[x_idx_crop[1]]
+                        yi = y_array[y_idx_crop[0]]
+                        yf = y_array[y_idx_crop[1]]
+                        
+                    pattern = crop_matrix(pattern, y_idx_crop, x_idx_crop, plot_matrix=0)
+                    
+                    # update number of points
+                    yn, xn = cropping                    
+              
             if(binning != []):
         
                 if not((xn % binning[1] == 0) & (yn % binning[0] == 0)):
@@ -464,7 +476,12 @@ def loadDiffPatterns(filename, binning=[], cropping=[],
         
                 if(i==0): print('normalizing to {0}'.format(normalize_to))
                 pattern = normalize_matrix(pattern, normalize_to, marker=marker)
-                       
+
+            if(multi_factor > 0):
+        
+                if(i==0): print('using multiplication factor = {0}'.format(multi_factor))
+                pattern = pattern * multi_factor
+                                                       
             if(add_noise):
                 
                 if(i==0): print('adding poisson noise')
@@ -476,14 +493,21 @@ def loadDiffPatterns(filename, binning=[], cropping=[],
                 
             if(ceil):
                 pattern[pattern != marker] = np.ceil(pattern[pattern != marker])
-
+                
+            if(around):
+                pattern[pattern != marker] = np.around(pattern[pattern != marker])
+                
             if(use_int):
                 if(i==0): print('converting to int')
                 pattern[pattern != marker] = np.round(pattern[pattern != marker]).astype('int')
 
+            max_c = np.max(pattern)
+            if(max_c > max_count):
+                max_count = max_c
                
             diffInt.append(pattern)
-                            
+    
+    print("maximum count = {0:.4e}".format(max_count))
     
     rx = xf - xi                # range of the detector
     ry = yf - yi
@@ -540,11 +564,196 @@ def loadDiffPatterns(filename, binning=[], cropping=[],
     d['energy'] = energy
     d['wavelength'] = wl
     d['z'] = z
+    d['max count'] = max_count
     
     return d
 
 
+def run_ptycho_reconstruction(n_iterations, obj_guess, illum_guess, 
+                              diff_patterns, obj_positions, obj_grid, illum_grid, 
+                              output_filename, fixed_probe=0, marker=-1):
 
+    startTime = time.time()
+    
+    obj_recons = obj_guess
+    illum_recons = illum_guess
+
+    n_patterns = len(diff_patterns)
+    
+    # n_iterations = 4000
+    print('Starting reconstruction algorithm with {0:d} iterations'.format(n_iterations))
+    progress = np.linspace(0, n_iterations, 21)
+    count=1
+    for i in range(n_iterations):
+        updateProbe = 0 if i < n_iterations * fixed_probe else 1
+        # updateProbe = 0 
+        
+        obj_recons, illum_recons = run_ePIE_interation(diff_patterns, obj_recons, illum_recons, obj_positions, 
+                                                       updateProbe, marker=marker)
+        if(i >= progress[count]):
+            print("finished iteration {0} out of {1}".format(i, n_iterations))
+            show_field_image(obj_recons, ext=obj_grid)
+            show_field_image(illum_recons, ext=illum_grid)
+            count += 1 
+
+    print("N PATTERNS = ", n_patterns)
+    # print("OVERLAPPING ", overlapping)
+    print("N ITERATIONS = {0}".format(n_iterations))
+    print("ELAPSED TIME = {0:.1f} minutes".format((time.time() - startTime)/60.0))
+
+    show_field_image(obj_recons, ext=obj_grid)
+    show_field_image(illum_recons, ext=illum_grid)
+    
+    save_output(output_filename, obj_recons, illum_recons, obj_grid, illum_grid)
+
+    return obj_recons, illum_recons
+
+
+def plot_reconstruction_from_hdf5_joined(h5_filename, sample_lim, beam_lim,
+                                         sample_bar_nm=50, beam_bar_nm=100, 
+                                         show_ab=0, posfix=''):
+        
+    sample_cmap = 'viridis'
+    beam_cmap = 'viridis'
+    
+    
+    with h5py.File(h5_filename, 'r') as f:
+        
+        beam_amp = np.array(f['illumination']['amplitude'])
+        beam_phase = np.array(f['illumination']['phase'])
+        beam_grid = np.array(f['illumination'].attrs['mesh'])*1e6
+    
+        sample_amp = np.array(f['sample']['amplitude'])
+        sample_phase = np.array(f['sample']['phase']) 
+        sample_grid = np.array(f['sample'].attrs['mesh'])*1e6
+    
+    beam_amp = beam_amp / np.max(beam_amp)
+    sample_amp = sample_amp / np.max(sample_amp)
+    sample_phase = sample_phase - np.mean(sample_phase)
+    
+    #########################################################################
+    ## plot beam
+    #########################################################################
+    
+    
+    fig, ax = plt.subplots(figsize=(5.0,3), nrows=1, ncols=2)
+    fig.tight_layout()
+    fig.subplots_adjust(0.01, 0.1, 0.99, 0.99, wspace=0.02)
+    # fig.subplots_adjust(wspace=0.01)
+    
+    im0 = ax[0].imshow(beam_amp, origin='lower', cmap=beam_cmap, 
+                       extent=beam_grid, aspect='equal', vmin=0, vmax=1)
+    
+    # cax0 = make_axes_locatable(ax[0]).append_axes('bottom', size="5%", pad=0.05) 
+    cb0 = fig.colorbar(im0, ax=ax[0], orientation='horizontal',
+                       pad=0.04, fraction=0.04, ticks=[0,0.5,1])
+    cb0.ax.minorticks_on()
+    
+    im1 = ax[1].imshow(beam_phase, origin='lower', cmap='hsv',
+                       vmin=-np.pi, vmax=np.pi, extent=beam_grid, aspect='equal')
+    
+    # cax1 = make_axes_locatable(ax[1]).append_axes('bottom', size="5%", pad=0.05) 
+    cb1 = fig.colorbar(im1, ax=ax[1], orientation='horizontal',
+                       pad=0.04, fraction=0.04, 
+                       ticks=[-np.pi,0,np.pi])
+    # cb1.ax.set_xticklabels(['-\u03C0', 0, '+\u03C0'])
+    cb1.ax.set_xticklabels(['$-\pi$', 0, '$+\pi$'])
+    cb1.ax.minorticks_on()
+    
+    if(beam_lim != []):
+        ax[0].set_xlim(beam_lim[0], beam_lim[1])
+        ax[1].set_xlim(beam_lim[0], beam_lim[1])
+        ax[0].set_ylim(beam_lim[0], beam_lim[1])
+        ax[1].set_ylim(beam_lim[0], beam_lim[1])
+        x_range = (beam_lim[1] - beam_lim[0])*1e3
+    
+    ### add scale bar
+    if(beam_lim == []):
+        x_range = (beam_grid[1] - beam_grid[0])*1e3 # nm
+    bar_width = beam_bar_nm # nm
+    bar_relative = bar_width / x_range
+    
+    rect = patches.Rectangle((1 - bar_relative - 0.02, 0.02), bar_relative, bar_relative/5, linewidth=0, 
+                             edgecolor='w', facecolor='w', transform=ax[0].transAxes)
+    ax[0].add_patch(rect)
+    ax[0].text(0.98, 0.04 + bar_relative/5, '{0} nm'.format(beam_bar_nm), color='w', weight='bold',
+               fontsize=7.5, horizontalalignment='right', transform=ax[0].transAxes)
+    
+    if(show_ab):
+        ax[0].text(0.04, 0.90, '(a)', color='w', weight='bold',
+                   fontsize=12, transform=ax[0].transAxes)
+        ax[1].text(0.04, 0.90, '(b)', color='w', weight='bold', backgroundcolor='darkblue',
+                   fontsize=12, transform=ax[1].transAxes)
+    
+    
+    ax[0].axis('off')
+    ax[1].axis('off')
+
+
+    plt.savefig(h5_filename[:-3] + posfix + '_probe.png', dpi=400)
+    
+    #########################################################################
+    ## plot sample
+    #########################################################################
+    
+    
+    fig, ax = plt.subplots(figsize=(5.0,3), nrows=1, ncols=2)
+    fig.tight_layout()
+    fig.subplots_adjust(0.01, 0.1, 0.99, 0.99, wspace=0.02)
+    # fig.subplots_adjust(wspace=0.01)
+    
+    im0 = ax[0].imshow(sample_amp, origin='lower', cmap=sample_cmap, 
+                       extent=sample_grid, aspect='equal', vmin=0, vmax=1)
+    
+    # cax0 = make_axes_locatable(ax[0]).append_axes('bottom', size="5%", pad=0.05) 
+    cb0 = fig.colorbar(im0, ax=ax[0], orientation='horizontal',
+                       pad=0.04, fraction=0.04, ticks=[0,0.5,1])
+    cb0.ax.minorticks_on()
+    
+    im1 = ax[1].imshow(sample_phase, origin='lower', cmap='hsv',
+                       vmin=-np.pi, vmax=np.pi, extent=sample_grid, aspect='equal')
+    
+    # cax1 = make_axes_locatable(ax[1]).append_axes('bottom', size="5%", pad=0.05) 
+    cb1 = fig.colorbar(im1, ax=ax[1], orientation='horizontal',
+                       pad=0.04, fraction=0.04, 
+                       ticks=[-np.pi,0,np.pi])
+    # cb1.ax.set_xticklabels(['-\u03C0', 0, '+\u03C0'])
+    cb1.ax.set_xticklabels(['$-\pi$', 0, '$+\pi$'])
+    cb1.ax.minorticks_on()
+    
+    if(sample_lim != []):
+        ax[0].set_xlim(sample_lim[0], sample_lim[1])
+        ax[1].set_xlim(sample_lim[0], sample_lim[1])
+        ax[0].set_ylim(sample_lim[0], sample_lim[1])
+        ax[1].set_ylim(sample_lim[0], sample_lim[1])
+        x_range = (sample_lim[1] - sample_lim[0])*1e3
+    
+    ### add scale bar
+    if(sample_lim == []):
+        x_range = (sample_grid[1] - sample_grid[0])*1e3 # nm
+    bar_width = sample_bar_nm # nm
+    bar_relative = bar_width / x_range
+    
+    rect = patches.Rectangle((1 - bar_relative - 0.02, 0.02), bar_relative, bar_relative/5, linewidth=0, 
+                             edgecolor='w', facecolor='w', transform=ax[0].transAxes)
+    ax[0].add_patch(rect)
+    ax[0].text(0.98, 0.04 + bar_relative/5, '{0} nm'.format(sample_bar_nm), color='w', weight='bold',
+               fontsize=7.5, horizontalalignment='right', transform=ax[0].transAxes)
+    
+    if(show_ab):
+        ax[0].text(0.04, 0.90, '(a)', color='w', weight='bold',
+                   fontsize=12, transform=ax[0].transAxes)
+        ax[1].text(0.04, 0.90, '(b)', color='w', weight='bold', backgroundcolor='darkblue',
+                   fontsize=12, transform=ax[1].transAxes)
+    
+    
+    # cb1.set_tick_params(direction='in')
+    
+    ax[0].axis('off')
+    ax[1].axis('off')
+       
+    
+    plt.savefig(h5_filename[:-3] + posfix + '_sample.png', dpi=400)
 
 
 
