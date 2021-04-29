@@ -24,25 +24,51 @@ from optlnls.importing import read_srw_wfr
 
 
 #%% read amplitude and phase from reconstrucion
-
-filename  = '/media/lordano/DATA/Mestrado/SRW/thesis_reconstructions/binning_comparison/'
-filename += 'TAR_8keV_siemens_ptycho_data7x7_SS20um_pinhole_250nm_recon_D.h5'
-
-with h5py.File(filename, 'r') as f:
+if(0):
     
-    beam = f['illumination']
-    amp = beam['amplitude'][()]
-    phase = beam['phase'][()]
-    mesh = beam.attrs['mesh']
+    filename  = '/media/lordano/DATA/Mestrado/SRW/thesis_reconstructions/binning_comparison/'
+    filename += 'TAR_8keV_siemens_ptycho_data7x7_SS20um_pinhole_250nm_recon_D.h5'
+    
+    with h5py.File(filename, 'r') as f:
+        
+        beam = f['illumination']
+        amp = beam['amplitude'][()]
+        phase = beam['phase'][()]
+        mesh = beam.attrs['mesh']
+        energy = 8000
+
+    xStart = mesh[0]
+    xFin = mesh[1]
+    yStart = mesh[2]
+    yFin = mesh[3]
+    ny, nx = amp.shape
+
+#%% read amplitude and phase from oasys wfr
+if(1):
+    
+    filename  = 'wavefront.h5'
+    
+    with h5py.File(filename, 'r') as f:
+
+        g = f['wfr']
+        field= g['wfr_complex_amplitude_s'][()]
+        # field_y = g['wfr_complex_amplitude_p'][()]
+        energy = g['wfr_photon_energy'][()]
+        mesh_x = g['wfr_mesh_X'][()]
+        mesh_y = g['wfr_mesh_Y'][()]
+
+
+    xStart = mesh_x[0]
+    xFin = mesh_x[1]
+    nx = int(mesh_x[2])
+    yStart = mesh_y[0]
+    yFin = mesh_y[1]
+    ny = int(mesh_y[2])    
+    
+    amp = np.abs(field)
+    phase = np.angle(field)
 
 #%% create srw wavefront
-
-xStart = mesh[0]
-xFin = mesh[1]
-yStart = mesh[2]
-yFin = mesh[3]
-ny, nx = amp.shape
-energy = 8000
 
 wfr = ExternalWfr(amplitude=amp, 
                   phase=phase, 
@@ -61,19 +87,19 @@ wfr = ExternalWfr(amplitude=amp,
 intensity = read_srw_wfr(wfr=wfr, pol_to_extract=0, int_to_extract=0)
 phase = read_srw_wfr(wfr=wfr, pol_to_extract=0, int_to_extract=4)
 
-plot_beam(intensity)
+plot_beam(intensity, textB=5)
 plot_beam(phase)
 
 #%% do beam caustic
 
 output = 'srw_caustic.h5'
 
-if(0):
+if(1):
 
     SRW_beam_caustic(wfr=wfr, 
-                     zStart=-500e-6, 
-                     zFin=+500e-6, 
-                     zStep=20e-6, 
+                     zStart=-5e-3, 
+                     zFin=+5e-3, 
+                     zStep=50e-6, 
                      zOffset=0.0, 
                      extract_parameter=1, 
                      useMPI=False, 
@@ -109,7 +135,7 @@ if(1):
                        aspect='auto', 
                        xlim=None, 
                        ylim=None, 
-                       zlim=None, 
+                       zlim=[1e17, 1e20], 
                        scale='log', 
                        figsize=(8,6), 
                        fontsize=12)
