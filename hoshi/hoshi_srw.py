@@ -202,6 +202,59 @@ def PlaneWfr(amplitude, phase, xStart, xFin, nx, yStart, yFin, ny, eStart, eFin,
     return wfr
 
 
+def ExternalWfr(amplitude, phase, xStart, xFin, nx, yStart, yFin, ny, eStart, eFin, ne, 
+                zStart=10.0, polarization=[1**0.5,0**0.5], Rx=1e10, Ry=1e10):
+    
+    from array import array
+    import numpy as np
+    from srwlib import SRWLWfr
+    
+    wfr = SRWLWfr()
+    wfr.allocate(ne, nx, ny)
+    wfr.mesh.zStart = zStart
+    wfr.mesh.eStart = eStart
+    wfr.mesh.eFin = eFin
+    wfr.mesh.xStart = xStart
+    wfr.mesh.xFin = xFin
+    wfr.mesh.yStart = yStart
+    wfr.mesh.yFin = yFin
+    
+    amplitude = amplitude.flatten()
+    phase = phase.flatten()
+    
+    eletric_fieldx = (amplitude*polarization[0])*np.exp(1j*phase) # [sqrt(ph/s/mm²/0.1%bw)]
+    eletric_fieldy = (amplitude*polarization[1])*np.exp(1j*phase) # [sqrt(ph/s/mm²/0.1%bw)]
+    
+    nTot = 2*ne*nx*ny
+    arEx = array('f', [0]*nTot)
+    arEy = array('f', [0]*nTot)
+    
+    buffer = 0
+    count = 0
+    for i in range(ny):
+        for j in range(nx):
+            for k in range(ne):
+                arEx[buffer] = eletric_fieldx[count].real
+                arEx[buffer+1] = eletric_fieldx[count].imag
+                arEy[buffer] = eletric_fieldy[count].real
+                arEy[buffer+1] = eletric_fieldy[count].imag      
+                buffer += 2
+                count += 1
+    
+    wfr.arEx = arEx
+    wfr.arEy = arEy
+    wfr.Rx = Rx
+    wfr.Ry = Ry
+    
+    wfr.partBeam.partStatMom1.x = 0
+    wfr.partBeam.partStatMom1.y = 0
+    wfr.partBeam.partStatMom1.z = 0
+    wfr.partBeam.partStatMom1.xp = 0
+    wfr.partBeam.partStatMom1.yp = 0
+    
+    return wfr
+
+
 def srw_pp_prop0():
     return [0, 0, 1.0, 0, 0, 1.0, 1.0, 1.0, 1.0, 0, 0, 0]
 
