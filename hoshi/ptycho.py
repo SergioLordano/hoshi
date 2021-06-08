@@ -304,7 +304,7 @@ def pre_process_from_nexus(filename, detectors, motors,
     
 
 def updateIllum(obj, illum, exitWave, exitWave_forcedAmp):
-    beta = 0.5
+    beta = 0.1
     illum_updated = illum + beta * ( np.conjugate(obj) / (np.max(np.abs(obj))**2 + 1e-5 ) ) * (exitWave_forcedAmp - exitWave) 
     return illum_updated
     
@@ -320,10 +320,11 @@ def run_local_iteration(obj, illum, diffPattern, updateProbe=1, updateSample=1, 
     
     exitWave = obj * illum # create exit wave
     F_exitWave = np.fft.fft2(exitWave) # fourier transform
+
+    diffPattern = np.fft.fftshift(diffPattern)
     
     # create mask to replace only the known pixels
     mask = diffPattern != marker
-    diffPattern = np.fft.fftshift(diffPattern)
         
     # replace modulus
     F_exitWave_abs = np.abs(F_exitWave) # get exit waves amplitudes
@@ -611,7 +612,7 @@ def run_ptycho_reconstruction(n_iterations, obj_guess, illum_guess,
 
 def plot_reconstruction_from_hdf5_joined(h5_filename, sample_lim, beam_lim,
                                          sample_bar_nm=50, beam_bar_nm=100, 
-                                         show_ab=0, posfix=''):
+                                         show_ab=0, posfix='', crop=0):
         
     sample_cmap = 'viridis'
     beam_cmap = 'viridis'
@@ -627,6 +628,40 @@ def plot_reconstruction_from_hdf5_joined(h5_filename, sample_lim, beam_lim,
         sample_phase = np.array(f['sample']['phase']) 
         sample_grid = np.array(f['sample'].attrs['mesh'])*1e6
     
+    
+    if(crop):
+        beam_ny, beam_nx = beam_amp.shape
+        beam_x = np.linspace(beam_grid[0], beam_grid[1], beam_nx)
+        beam_y = np.linspace(beam_grid[2], beam_grid[3], beam_ny)
+        
+        beam_idx_x = [np.abs(beam_x - beam_lim[0]).argmin(),
+                      np.abs(beam_x - beam_lim[1]).argmin()]
+
+        beam_idx_y = [np.abs(beam_y - beam_lim[0]).argmin(),
+                      np.abs(beam_y - beam_lim[1]).argmin()]
+
+        beam_amp = crop_matrix(beam_amp, beam_idx_y, beam_idx_x)
+        beam_phase = crop_matrix(beam_phase, beam_idx_y, beam_idx_x)
+
+        sample_ny, sample_nx = sample_amp.shape
+        sample_x = np.linspace(sample_grid[0], sample_grid[1], sample_nx)
+        sample_y = np.linspace(sample_grid[2], sample_grid[3], sample_ny)
+        
+        sample_idx_x = [np.abs(sample_x - sample_lim[0]).argmin(),
+                      np.abs(sample_x - sample_lim[1]).argmin()]
+
+        sample_idx_y = [np.abs(sample_y - sample_lim[0]).argmin(),
+                      np.abs(sample_y - sample_lim[1]).argmin()]
+        
+        sample_amp = crop_matrix(sample_amp, sample_idx_y, sample_idx_x)
+        sample_phase = crop_matrix(sample_phase, sample_idx_y, sample_idx_x)
+
+        beam_grid = [beam_x[beam_idx_x[0]], beam_x[beam_idx_x[1]], 
+                     beam_y[beam_idx_y[0]], beam_y[beam_idx_x[1]]]
+        
+        sample_grid = [sample_x[sample_idx_x[0]], sample_x[sample_idx_x[1]], 
+                     sample_y[sample_idx_y[0]], sample_y[sample_idx_x[1]]]
+        
     beam_amp = beam_amp / np.max(beam_amp)
     sample_amp = sample_amp / np.max(sample_amp)
     sample_phase = sample_phase - np.mean(sample_phase)

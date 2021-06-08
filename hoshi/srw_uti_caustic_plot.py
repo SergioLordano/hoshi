@@ -125,6 +125,7 @@ def plot_caustic2D_cut(filename_h5='test.h5', show_axis='x', fixed_position=0.0,
     uz_list = []
     
     plt.figure(figsize=figsize)
+    plt.subplots_adjust(0.1,0.18,0.99,0.95)
     
     plt.ylabel(unitLabel[1], fontsize=fontsize)
     plt.xlabel(unitLabel[0], fontsize=fontsize)
@@ -135,6 +136,8 @@ def plot_caustic2D_cut(filename_h5='test.h5', show_axis='x', fixed_position=0.0,
         plt.ylim(ylim[0], ylim[1])
     
     if(show_axis == 'x'):
+        
+        posfix = '_caustic_x'
         
         y_pts = np.linspace(ymin, ymax, ny)
         fixed_idx = np.abs(fixed_position - y_pts).argmin()
@@ -162,6 +165,8 @@ def plot_caustic2D_cut(filename_h5='test.h5', show_axis='x', fixed_position=0.0,
                     plt.imshow(uz, extent=[zmin*unitFactor[0], zmax*unitFactor[0], xmin*unitFactor[1], xmax*unitFactor[1]], aspect=aspect, origin='lower', norm=LogNorm(vmin=uz_min, vmax=uz_max))
                
     if(show_axis == 'y'):
+        
+        posfix = '_caustic_y'        
         
         x_pts = np.linspace(xmin, xmax, nx)
         fixed_idx = np.abs(fixed_position - x_pts).argmin()
@@ -198,6 +203,8 @@ def plot_caustic2D_cut(filename_h5='test.h5', show_axis='x', fixed_position=0.0,
         tick.label.set_fontsize(fontsize)
         
     f.close()
+    
+    plt.savefig(filename_h5[:-3]+posfix+'.png', dpi=400)    
     
     plt.show()
     
