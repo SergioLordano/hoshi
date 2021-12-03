@@ -5,193 +5,169 @@ Created on Wed May  2 16:44:18 2018
 
 @author: sergio.lordano
 """
-def get_fwhm(x, y, oversampling=1, zero_padding=False, avg_correction=False, debug=False):
-    
-    import numpy as np
-    from scipy.interpolate import interp1d
-    
-    def add_zeros(array):
-        aux = []
-        aux.append(0)
-        for i in range(len(array)):
-            aux.append(array[i])
-        aux.append(0)
-        return np.array(aux)
-    
-    def add_steps(array):
-        aux = []
-        step = (np.max(array)-np.min(array))/(len(array)-1)
-        aux.append(array[0]-step)
-        for i in range(len(array)):
-            aux.append(array[i])
-        aux.append(array[-1]+step)
-        return np.array(aux)
-    
-    def interp_distribution(array_x,array_y,oversampling):
-        dist = interp1d(array_x, array_y)
-        x_int = np.linspace(np.min(array_x), np.max(array_x), int(len(x)*oversampling))
-        y_int = dist(x_int)
-        return x_int, y_int 
-    
-    if(oversampling > 1.0):
-        array_x, array_y = interp_distribution(x, y, oversampling)
-    else:
-        array_x, array_y = x, y
-        
-    if(zero_padding):
-        array_x = add_steps(x)
-        array_y = add_zeros(y)
-        
-    try:    
-        y_peak = np.max(array_y)
-        idx_peak = (np.abs(array_y-y_peak)).argmin()
-        #x_peak = array_x[idx_peak]
-        if(idx_peak==0):
-            left_hwhm_idx = 0
-        else:
-            #left_hwhm_idx = (np.abs(array_y[:idx_peak]-y_peak/2)).argmin()
-#            for i in range(idx_peak,0,-1):
-            for i in range(0,idx_peak):
-#                if np.abs(array_y[i]-y_peak/2)<np.abs(array_y[i-1]-y_peak/2) and (array_y[i-1]-y_peak/2)<0:
-                if np.abs(array_y[i]-y_peak/2)>np.abs(array_y[i-1]-y_peak/2) and (array_y[i-1]-y_peak/2)>0:
-                    break                
-            left_hwhm_idx = i     
-            
-        if(idx_peak==len(array_y)-1):
-            right_hwhm_idx = len(array_y)-1
-        else:
-            #right_hwhm_idx = (np.abs(array_y[idx_peak:]-y_peak/2)).argmin() + idx_peak
-#            for j in range(idx_peak,len(array_y)):
-            for j in range(len(array_y)-2, idx_peak, -1):
-#                if np.abs(array_y[j]-y_peak/2)<np.abs(array_y[j+1]-y_peak/2) and (array_y[j+1]-y_peak/2)<0:
-                if np.abs(array_y[j]-y_peak/2)>np.abs(array_y[j+1]-y_peak/2) and (array_y[j+1]-y_peak/2)>0:
-                    break              
-            right_hwhm_idx = j
-            
-        fwhm = array_x[right_hwhm_idx] - array_x[left_hwhm_idx]               
-            
-        if(avg_correction):
-            avg_y = (array_y[left_hwhm_idx]+array_y[right_hwhm_idx])/2.0
-            popt_left = np.polyfit(np.array([array_x[left_hwhm_idx-1],array_x[left_hwhm_idx],array_x[left_hwhm_idx+1]]),
-                                   np.array([array_y[left_hwhm_idx-1],array_y[left_hwhm_idx],array_y[left_hwhm_idx+1]]),1)                                   
-            popt_right = np.polyfit(np.array([array_x[right_hwhm_idx-1],array_x[right_hwhm_idx],array_x[right_hwhm_idx+1]]),
-                                   np.array([array_y[right_hwhm_idx-1],array_y[right_hwhm_idx],array_y[right_hwhm_idx+1]]),1)
-            x_left = (avg_y-popt_left[1])/popt_left[0]
-            x_right = (avg_y-popt_right[1])/popt_right[0]
-            fwhm = x_right - x_left
-            
-            return [fwhm, x_left, x_right, avg_y, avg_y]
-        else:
-            return [fwhm, array_x[left_hwhm_idx], array_x[right_hwhm_idx], array_y[left_hwhm_idx], array_y[right_hwhm_idx]]
-            
-        if(debug):
-            print(y_peak)
-            print(idx_peak)
-            print(left_hwhm_idx, right_hwhm_idx)
-            print(array_x[left_hwhm_idx], array_x[right_hwhm_idx])            
-        
-    except ValueError:
-        fwhm = 0.0        
-        print("Could not calculate fwhm\n")   
-        return [fwhm, 0, 0, 0, 0]
-    
-    
-def plot_caustic2D_cut(filename_h5='test.h5', show_axis='x', fixed_position=0.0, unitFactor=[1.0, 1e6], unitLabel=['Z [m]', 'X [$\mu m$]'], aspect='auto', xlim=None, ylim=None, zlim=None, scale='linear', figsize=(8,6), fontsize=12):
-    
-    import h5py
-    from matplotlib import pyplot as plt
-    from matplotlib.colors import LogNorm
-    import numpy as np
+
+from optlnls.math import get_fwhm
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+
+def read_caustic(filename_h5='test.h5'):
     
     f = h5py.File(filename_h5, 'r')
     
-    xmin = f.attrs['xStart']
-    xmax = f.attrs['xFin']
-    nx = f.attrs['nx']
-    ymin = f.attrs['yStart']
-    ymax = f.attrs['yFin']
-    ny = f.attrs['ny']
-    emin = f.attrs['eStart']
-    emax = f.attrs['eFin']
-    ne = f.attrs['ne']
-    zOffset = f.attrs['zOffset']
-    zmin = f.attrs['zStart'] + zOffset
-    zmax = f.attrs['zFin'] + zOffset
-    nz = f.attrs['nz']
-    zStep = f.attrs['zStep']
+    odict = dict()
+    
+    odict['xmin'] = f.attrs['xStart']
+    odict['xmax'] = f.attrs['xFin']
+    odict['nx'] = f.attrs['nx']
+    odict['ymin'] = f.attrs['yStart']
+    odict['ymax'] = f.attrs['yFin']
+    odict['ny'] = f.attrs['ny']
+    odict['emin'] = f.attrs['eStart']
+    odict['emax'] = f.attrs['eFin']
+    odict['ne'] = f.attrs['ne']
+    odict['zOffset'] = f.attrs['zOffset']
+    odict['zmin'] = f.attrs['zStart'] + odict['zOffset'] 
+    odict['zmax'] = f.attrs['zFin'] + odict['zOffset'] 
+    odict['nz'] = f.attrs['nz']
+    odict['zStep'] = f.attrs['zStep']
+
+           
+    caustic3D = np.zeros((odict['nz'], odict['ny'], odict['nx']))
+    
+    integral = np.zeros(odict['nz'])
+    max_intensity = np.zeros(odict['nz'])
+    
+    for i in range(odict['nz']):
+        dataset = 'step_{0}'.format(i)
+        caustic3D[i] = np.array(f[dataset])
+        integral[i] = f[dataset].attrs['integral']
+        max_intensity[i] = f[dataset].attrs['max intensity']
+        
+    f.close()
+        
+    odict['caustic'] = caustic3D 
+    odict['integral'] = integral
+    odict['max intensity'] = max_intensity        
+    
+    return odict
+    
+def get_x_cut(caustic_dict, projected=1, ypos=0):
+       
+    cdict = caustic_dict
+    
+    if(projected):        
+        cut = np.sum(cdict['caustic'], axis=1).transpose()
+    else:
+        y = np.linspace(cdict['ymin'], cdict['ymax'], cdict['ny'])
+        idx = np.abs(y - ypos).argmin()
+        if((ypos < np.min(y)) or (ypos > np.max(y))):
+            print('   *** WARNING: ypos out of range [', cdict['ymin'], ',', cdict['ymax'], ']')
+        cut = cdict['caustic'][:,idx,:].transpose()
+                
+    return [cut, y[idx]]
+
+def get_y_cut(caustic_dict, projected=1, xpos=0):
+       
+    cdict = caustic_dict
+    
+    if(projected):        
+        cut = np.sum(cdict['caustic'], axis=2).transpose()
+    else:
+        x = np.linspace(cdict['xmin'], cdict['xmax'], cdict['nx'])
+        idx = np.abs(x - xpos).argmin()
+        if((xpos < np.min(x)) or (xpos > np.max(x))):
+            print('   *** WARNING: xpos out of range [', cdict['xmin'], ',', cdict['xmax'], ']')
+        cut = cdict['caustic'][:,:,idx].transpose()
+                
+    return [cut, x[idx]]
+
+def get_xy_cut(caustic_dict, zpos=0):
+    
+    cdict = caustic_dict
+    
+    z = np.linspace(cdict['zmin'] + cdict['zOffset'], 
+                    cdict['zmax'] + cdict['zOffset'], 
+                    cdict['nz'])
+    
+    idx = np.abs(z - zpos).argmin()
+    if((zpos < np.min(z)) or (zpos > np.max(z))):
+        print('   *** WARNING: zpos out of range [', z.min(), ',', z.max(), ']')
+    cut = cdict['caustic'][idx,:,:].transpose()
+    
+    return [cut, z[idx]]
     
     
-    mesh = [xmin, xmax, nx, ymin, ymax, ny, emin, emax, ne, zmin, zmax, nz]
-    uz_list = []
+   
     
-    plt.figure(figsize=figsize)
+def plot_caustic2D_cut(filename='test.h5', showAxis='x', fixedPosition=0.0, 
+                       zUnitFactor=1.0, uUnitFactor=1e6, zLabel='Z [m]', uLabel='X [$\mu m$]', 
+                       aspect='auto', ulim=None, zlim=None, clim=None, minThreshold=0, 
+                       scale='linear', figsize=(8,6), fontsize=12,
+                       projected=1, showPlot=1, savefig=1):
+    
+    cdict = read_caustic(filename)
+    
+    xmin = cdict['xmin']
+    xmax = cdict['xmax']
+    ymin = cdict['ymin']
+    ymax = cdict['ymax']
+    zOffset = cdict['zOffset']
+    zmin = cdict['zmin'] + zOffset
+    zmax = cdict['zmax'] + zOffset
+    
+    #### define axis (u)    
+    if(showAxis == 'x'):
+        uz = get_x_cut(cdict, projected, fixedPosition)
+        posfix = '_xz' 
+        umin = xmin
+        umax = xmax
+
+    if(showAxis == 'y'):
+        uz = get_y_cut(cdict, projected, fixedPosition)    
+        posfix = '_yz' 
+        umin = ymin
+        umax = ymax
+        
+    #### define limits and extent
+    if(minThreshold > 0):
+        uz_min, uz_max = np.max(uz)*minThreshold, np.max(uz)
+    
+    else:    
+        if(clim is not None):
+            uz_min, uz_max = clim[0], clim[1]
+        else:
+            uz_min, uz_max = np.min(uz), np.max(uz)
+        
+    extent = [zmin*zUnitFactor, zmax*zUnitFactor, 
+              umin*uUnitFactor, umax*uUnitFactor]
+        
+    #### create plot
+    fig = plt.figure(figsize=figsize)
     plt.subplots_adjust(0.1,0.18,0.99,0.95)
     
-    plt.ylabel(unitLabel[1], fontsize=fontsize)
-    plt.xlabel(unitLabel[0], fontsize=fontsize)
+    if(scale=='linear'):
+        plt.imshow(uz, aspect=aspect, origin='lower', 
+                   vmin=uz_min, vmax=uz_max, extent=extent)
     
-    if xlim is not None:
-        plt.xlim(xlim[0], xlim[1])
-    if ylim is not None:
-        plt.ylim(ylim[0], ylim[1])
+    elif(scale=='log'):
+        if(uz_min <= 0.0):
+            uz_min_except_0 = np.min(uz[uz>0])
+            uz[uz<=0.0] = uz_min_except_0/2.0
+            uz_min = uz_min_except_0/2.0                    
+        plt.imshow(uz, aspect=aspect, origin='lower', 
+                   norm=LogNorm(vmin=uz_min, vmax=uz_max),
+                   extent=extent)
     
-    if(show_axis == 'x'):
+    plt.ylabel(uLabel, fontsize=fontsize)
+    plt.xlabel(zLabel, fontsize=fontsize)
         
-        posfix = '_caustic_x'
-        
-        y_pts = np.linspace(ymin, ymax, ny)
-        fixed_idx = np.abs(fixed_position - y_pts).argmin()
+    if zlim is not None:
+        plt.xlim(zlim[0], zlim[1])
+    if ulim is not None:
+        plt.ylim(ulim[0], ulim[1])
     
-        for i in range(nz):
-            dataset = 'step_{0}'.format(i)
-            uz_list.append(f[dataset][fixed_idx, :])
-            uz = np.array(uz_list).transpose()
-            
-            if(zlim is not None):
-                uz_min, uz_max = zlim[0], zlim[1]
-            else:
-                uz_min, uz_max = np.min(uz), np.max(uz)
-                
-            if(scale=='linear'):
-                plt.imshow(uz, extent=[zmin*unitFactor[0], zmax*unitFactor[0], xmin*unitFactor[1], xmax*unitFactor[1]], aspect=aspect, origin='lower', vmin=uz_min, vmax=uz_max)
-            
-            elif(scale=='log'):
-                if(np.min(uz) <= 0.0):
-                    uz_min_except_0 = np.min(uz[uz>0])
-                    uz[uz<=0.0] = uz_min_except_0/2.0
-                    uz_min = uz_min_except_0/2.0
-                    plt.imshow(uz, extent=[zmin*unitFactor[0], zmax*unitFactor[0], xmin*unitFactor[1], xmax*unitFactor[1]], aspect=aspect, origin='lower', norm=LogNorm(vmin=uz_min, vmax=uz_max))
-                else:
-                    plt.imshow(uz, extent=[zmin*unitFactor[0], zmax*unitFactor[0], xmin*unitFactor[1], xmax*unitFactor[1]], aspect=aspect, origin='lower', norm=LogNorm(vmin=uz_min, vmax=uz_max))
-               
-    if(show_axis == 'y'):
-        
-        posfix = '_caustic_y'        
-        
-        x_pts = np.linspace(xmin, xmax, nx)
-        fixed_idx = np.abs(fixed_position - x_pts).argmin()
-    
-        for i in range(nz):
-            dataset = 'step_{0}'.format(i)
-            uz_list.append(f[dataset][:, fixed_idx])
-            uz = np.array(uz_list).transpose()
-            
-            if(zlim is not None):
-                uz_min, uz_max = zlim[0], zlim[1]
-            else:
-                uz_min, uz_max = np.min(uz), np.max(uz)
-                
-            if(scale=='linear'):
-                plt.imshow(uz, extent=[zmin*unitFactor[0], zmax*unitFactor[0], ymin*unitFactor[1], ymax*unitFactor[1]], aspect=aspect, origin='lower', vmin=uz_min, vmax=uz_max)
-            
-            elif(scale=='log'):
-                if(np.min(uz) <= 0.0):
-                    uz_min_except_0 = np.min(uz[uz>0])
-                    uz[uz<=0.0] = uz_min_except_0/2.0
-                    uz_min = uz_min_except_0/2.0                    
-                    plt.imshow(uz, extent=[zmin*unitFactor[0], zmax*unitFactor[0], ymin*unitFactor[1], ymax*unitFactor[1]], aspect=aspect, origin='lower', norm=LogNorm(vmin=uz_min, vmax=uz_max))
-                else:
-                    plt.imshow(uz, extent=[zmin*unitFactor[0], zmax*unitFactor[0], ymin*unitFactor[1], ymax*unitFactor[1]], aspect=aspect, origin='lower', norm=LogNorm(vmin=uz_min, vmax=uz_max))
     ax = plt.gca()
     cb = plt.colorbar()
     cb.ax.tick_params(labelsize=fontsize)
@@ -201,16 +177,43 @@ def plot_caustic2D_cut(filename_h5='test.h5', show_axis='x', fixed_position=0.0,
         tick.label.set_fontsize(fontsize)
     for tick in ax.yaxis.get_major_ticks():
         tick.label.set_fontsize(fontsize)
-        
-    f.close()
+            
+    if(savefig):
+        plt.savefig(filename[:-3]+posfix+'.png', dpi=400)    
     
-    plt.savefig(filename_h5[:-3]+posfix+'.png', dpi=400)    
+    if(showPlot):
+        plt.show()
     
-    plt.show()
-    
-    return mesh, uz
+    return cdict
 
 
+def test():
+    
+    global caustic_dict, cut
+    
+    fname = '/media/lordano/DATA/LNLS/Oasys/EMA/XFW/XFW_FZP/ThinLens_annular_caustic.h5'
+
+    cdict = read_caustic(fname)
+    
+
+    
+    # plot_caustic2D_cut(filename=fname, showAxis='x', projected=1, savefig=0,
+    #                    scale='log', minThreshold=0, clim=[1e16,1e20])
+    
+    # cut = get_y_cut(cdict, projected=0)    
+    xy, zpos = get_xy_cut(cdict, zpos=0.52)
+    
+    plt.figure()
+    plt.imshow(xy, aspect='auto')
+    
+    z = np.linspace(cdict['zmin'] + cdict['zOffset'], 
+                    cdict['zmax'] + cdict['zOffset'], 
+                    cdict['nz'])
+    max_int = cdict['max intensity']
+    
+    plt.figure()
+    plt.plot(z, max_int)
+    plt.yscale('log')
 
 
 def plot_caustic_slice(filename='test.h5', z=0.0, dataset_prefix='step_', plot='cut',
@@ -361,7 +364,8 @@ def plot_caustic_slice_int(**kwargs):
                 scale=wg.fixed(kwargs['scale']), showPlot=wg.fixed(kwargs['showPlot']), showFWHM=wg.fixed(kwargs['showFWHM']))
 
 
-
-
-
+if __name__ == '__main__':
+    
+    # test()
+    pass
 
