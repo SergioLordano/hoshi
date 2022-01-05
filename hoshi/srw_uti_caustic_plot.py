@@ -59,14 +59,16 @@ def get_x_cut(caustic_dict, projected=1, ypos=0):
     
     if(projected):        
         cut = np.sum(cdict['caustic'], axis=1).transpose()
+        y0 = np.nan
     else:
         y = np.linspace(cdict['ymin'], cdict['ymax'], cdict['ny'])
         idx = np.abs(y - ypos).argmin()
+        y0 = y[idx]
         if((ypos < np.min(y)) or (ypos > np.max(y))):
             print('   *** WARNING: ypos out of range [', cdict['ymin'], ',', cdict['ymax'], ']')
         cut = cdict['caustic'][:,idx,:].transpose()
                 
-    return [cut, y[idx]]
+    return [cut, y0]
 
 def get_y_cut(caustic_dict, projected=1, xpos=0):
        
@@ -74,14 +76,16 @@ def get_y_cut(caustic_dict, projected=1, xpos=0):
     
     if(projected):        
         cut = np.sum(cdict['caustic'], axis=2).transpose()
+        x0 = np.nan
     else:
         x = np.linspace(cdict['xmin'], cdict['xmax'], cdict['nx'])
         idx = np.abs(x - xpos).argmin()
+        x0 = x[idx]
         if((xpos < np.min(x)) or (xpos > np.max(x))):
             print('   *** WARNING: xpos out of range [', cdict['xmin'], ',', cdict['xmax'], ']')
         cut = cdict['caustic'][:,:,idx].transpose()
                 
-    return [cut, x[idx]]
+    return [cut, x0]
 
 def get_xy_cut(caustic_dict, zpos=0):
     
@@ -119,13 +123,13 @@ def plot_caustic2D_cut(filename='test.h5', showAxis='x', fixedPosition=0.0,
     
     #### define axis (u)    
     if(showAxis == 'x'):
-        uz = get_x_cut(cdict, projected, fixedPosition)
+        uz, y0 = get_x_cut(cdict, projected, fixedPosition)
         posfix = '_xz' 
         umin = xmin
         umax = xmax
 
     if(showAxis == 'y'):
-        uz = get_y_cut(cdict, projected, fixedPosition)    
+        uz, x0 = get_y_cut(cdict, projected, fixedPosition)    
         posfix = '_yz' 
         umin = ymin
         umax = ymax
