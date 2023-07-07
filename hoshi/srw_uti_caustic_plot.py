@@ -187,8 +187,13 @@ def plot_caustic2D_cut(filename='test.h5', showAxis='x', fixedPosition=0.0,
     
     if(showPlot):
         plt.show()
-    
+        
+    cdict['casutic'] = uz
+    cdict['umin'] = umin
+    cdict['umax'] = umax
+        
     return cdict
+
 
 
 def test():
