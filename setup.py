@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="hoshi", 
-    version="0.0.3",
+    version="0.0.4",
     author="Sergio Lordano",
     author_email="sergiolordano2@gmail.com",
     description="X-ray optics utilities",
